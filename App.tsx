@@ -3,7 +3,9 @@ import ReactCrop, { type Crop, centerCrop, makeAspectCrop } from 'react-image-cr
 import UploadArea from './components/UploadArea';
 import IconButton from './components/IconButton';
 import RatioSelector from './components/RatioSelector';
-import { DownloadIcon, RefreshIcon } from './components/Icons';
+import { RefreshIcon, RotateIcon, SparklesIcon } from './components/Icons';
+import { getSmartCrop } from './lib/gemini';
+import DownloadOptions, { DownloadFormat } from './components/DownloadOptions';
 
 type AppState = 'idle' | 'loading' | 'success' | 'error';
 interface Ratio {
@@ -24,11 +26,14 @@ const RATIOS: Ratio[] = [
 
 const App: React.FC = () => {
   const [originalImage, setOriginalImage] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [appState, setAppState] = useState<AppState>('idle');
   const [selectedRatio, setSelectedRatio] = useState<Ratio>(RATIOS[0]);
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<Crop | null>(null);
+  const [rotation, setRotation] = useState(0);
+  const [isSmartCropping, setIsSmartCropping] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -42,37 +47,46 @@ const App: React.FC = () => {
     const image = imgRef.current;
     const canvas = previewCanvasRef.current;
     const ctx = canvas.getContext('2d');
-
-    if (!ctx) {
-      console.error('Failed to get 2d context');
-      return;
-    }
+    if (!ctx) return;
 
     const scaleX = image.naturalWidth / image.width;
     const scaleY = image.naturalHeight / image.height;
     const pixelRatio = window.devicePixelRatio || 1;
-    
-    canvas.width = Math.floor(completedCrop.width * scaleX * pixelRatio);
-    canvas.height = Math.floor(completedCrop.height * scaleY * pixelRatio);
-
-    ctx.scale(pixelRatio, pixelRatio);
-    ctx.imageSmoothingQuality = 'high';
 
     const cropX = completedCrop.x * scaleX;
     const cropY = completedCrop.y * scaleY;
+    const cropWidth = completedCrop.width * scaleX;
+    const cropHeight = completedCrop.height * scaleY;
+    
+    const isRotated = rotation === 90 || rotation === 270;
+    const canvasWidth = isRotated ? cropHeight : cropWidth;
+    const canvasHeight = isRotated ? cropWidth : cropHeight;
 
+    canvas.width = Math.floor(canvasWidth * pixelRatio);
+    canvas.height = Math.floor(canvasHeight * pixelRatio);
+
+    ctx.scale(pixelRatio, pixelRatio);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.save();
+    
+    ctx.translate(canvasWidth / 2, canvasHeight / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.translate(-cropWidth / 2, -cropHeight / 2);
+    
     ctx.drawImage(
       image,
       cropX,
       cropY,
-      completedCrop.width * scaleX,
-      completedCrop.height * scaleY,
+      cropWidth,
+      cropHeight,
       0,
       0,
-      completedCrop.width * scaleX,
-      completedCrop.height * scaleY
+      cropWidth,
+      cropHeight
     );
-  }, [completedCrop]);
+
+    ctx.restore();
+  }, [completedCrop, rotation]);
 
   const handleFile = (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -84,9 +98,12 @@ const App: React.FC = () => {
     setError(null);
     setAppState('loading');
     setOriginalImage(null);
+    setImageFile(null);
     setCrop(undefined);
     setCompletedCrop(null);
+    setRotation(0);
 
+    setImageFile(file);
     const reader = new FileReader();
     reader.onload = (e) => {
       const imageUrl = e.target?.result as string;
@@ -104,100 +121,136 @@ const App: React.FC = () => {
     imgRef.current = e.currentTarget;
     const { width, height } = e.currentTarget;
     const percentCrop = centerCrop(
-        makeAspectCrop(
-            {
-                unit: '%',
-                width: 90,
-            },
-            selectedRatio.value,
-            width,
-            height
-        ),
+      makeAspectCrop(
+        { unit: '%', width: 90 },
+        selectedRatio.value / (isRotated(rotation) ? height/width : 1),
         width,
         height
+      ),
+      width,
+      height
     );
     setCrop(percentCrop);
-    
-    // Convert to pixels and set completedCrop for initial preview
-    const pixelCrop: Crop = {
-        unit: 'px',
-        x: (percentCrop.x / 100) * width,
-        y: (percentCrop.y / 100) * height,
-        width: (percentCrop.width / 100) * width,
-        height: (percentCrop.height / 100) * height,
-    };
-    setCompletedCrop(pixelCrop);
+    setCompletedCrop(pixelToPercent(percentCrop, width, height));
   }
+  
+  const isRotated = (currentRotation: number) => currentRotation === 90 || currentRotation === 270;
+
+  const pixelToPercent = (pixelCrop: Crop, width: number, height: number): Crop => ({
+      unit: 'px',
+      x: (pixelCrop.x / 100) * width,
+      y: (pixelCrop.y / 100) * height,
+      width: (pixelCrop.width / 100) * width,
+      height: (pixelCrop.height / 100) * height,
+  });
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      handleFile(file);
-    }
+    if (file) handleFile(file);
   };
   
-  const handleFileDrop = (file: File) => {
-    handleFile(file);
-  };
+  const handleFileDrop = (file: File) => handleFile(file);
 
-  const handleDownload = () => {
+  const handleDownload = (format: DownloadFormat, quality?: number) => {
     const canvas = previewCanvasRef.current;
     if (!canvas || !completedCrop || completedCrop.width === 0) return;
     
-    const dataUrl = canvas.toDataURL('image/webp', 0.9);
+    const dataUrl = canvas.toDataURL(format, quality);
     const link = document.createElement('a');
     link.href = dataUrl;
-    link.download = `converted-image-${selectedRatio.label.replace(':', 'x')}.webp`;
+    const extension = format.split('/')[1];
+    link.download = `converted-image-${selectedRatio.label.replace(':', 'x')}.${extension}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
+  const handleCopy = (format: DownloadFormat, quality?: number): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const canvas = previewCanvasRef.current;
+      if (!canvas || !completedCrop || completedCrop.width === 0) return resolve(false);
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) return resolve(false);
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+          resolve(true);
+        } catch (err) {
+          console.error('Failed to copy image:', err);
+          resolve(false);
+        }
+      }, format, quality);
+    });
+  };
+
   const handleReset = () => {
       setOriginalImage(null);
+      setImageFile(null);
       setError(null);
       setAppState('idle');
       imgRef.current = null;
-      if(fileInputRef.current) {
-          fileInputRef.current.value = '';
-      }
+      if(fileInputRef.current) fileInputRef.current.value = '';
       setCrop(undefined);
       setCompletedCrop(null);
+      setRotation(0);
       const canvas = previewCanvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
-        ctx?.clearRect(0,0, canvas.width, canvas.height);
-      }
+      if (canvas) canvas.getContext('2d')?.clearRect(0,0, canvas.width, canvas.height);
   };
 
-  const handleRatioChange = (ratio: Ratio) => {
-    setSelectedRatio(ratio);
+  const updateCropForRatio = (ratio: Ratio, currentRotation: number) => {
     if (imgRef.current) {
       const { width, height } = imgRef.current;
+      const aspect = isRotated(currentRotation) ? 1 / ratio.value : ratio.value;
       const percentCrop = centerCrop(
-        makeAspectCrop(
-          {
-            unit: '%',
-            width: 90,
-          },
-          ratio.value,
-          width,
-          height,
-        ),
+        makeAspectCrop({ unit: '%', width: 90 }, aspect, width, height),
         width,
         height,
       );
       setCrop(percentCrop);
-      
-      const pixelCrop: Crop = {
-        unit: 'px',
-        x: (percentCrop.x / 100) * width,
-        y: (percentCrop.y / 100) * height,
-        width: (percentCrop.width / 100) * width,
-        height: (percentCrop.height / 100) * height,
-    };
-    setCompletedCrop(pixelCrop);
+      setCompletedCrop(pixelToPercent(percentCrop, width, height));
     }
+  };
+
+  const handleRatioChange = (ratio: Ratio) => {
+    setSelectedRatio(ratio);
+    updateCropForRatio(ratio, rotation);
+  };
+
+  const handleRotate = () => {
+    const newRotation = (rotation + 90) % 360;
+    setRotation(newRotation);
+    updateCropForRatio(selectedRatio, newRotation);
+  };
+
+  const handleSmartCrop = async () => {
+    if (!imageFile) return;
+    setIsSmartCropping(true);
+    try {
+      const smartCropData = await getSmartCrop(imageFile);
+      if (smartCropData && imgRef.current) {
+        const { width, height } = imgRef.current;
+        const aspect = isRotated(rotation) ? 1/selectedRatio.value : selectedRatio.value;
+
+        const newCrop = makeAspectCrop(smartCropData, aspect, width, height);
+        const centeredCrop = centerCrop(newCrop, width, height);
+
+        setCrop(centeredCrop);
+        setCompletedCrop(pixelToPercent(centeredCrop, width, height));
+      } else {
+        setError("Could not determine a smart crop region.");
+      }
+    } catch (e) {
+      console.error(e);
+      setError("AI Smart Crop failed. Please try again.");
+    } finally {
+      setIsSmartCropping(false);
+    }
+  };
+  
+  const getAspectRatio = () => {
+      if(!imgRef.current) return selectedRatio.value;
+      const { width, height } = imgRef.current;
+      return isRotated(rotation) ? selectedRatio.value * (width/height) : selectedRatio.value;
   };
 
   return (
@@ -205,20 +258,29 @@ const App: React.FC = () => {
       <div className="w-full max-w-5xl mx-auto">
         <header className="text-center mb-6">
           <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">
-            Interactive Aspect Ratio Cropper
+            Intelligent Image Cropper
           </h1>
           <p className="text-slate-400 mt-2 text-lg">
-            Upload an image, select an aspect ratio, and choose your perfect crop.
+            Upload, rotate, and use AI to find the perfect crop.
           </p>
         </header>
 
-        {(appState !== 'loading') && (
-            <RatioSelector
-                ratios={RATIOS}
-                selectedRatio={selectedRatio}
-                onChange={handleRatioChange}
-                disabled={appState !== 'success'}
-            />
+        {(appState === 'success') && (
+            <div className="flex flex-col items-center gap-2 mb-6">
+                <label htmlFor="ratio-select" className="text-slate-300 font-medium">
+                    Select Aspect Ratio
+                </label>
+                <div className="flex items-center gap-4">
+                    <RatioSelector
+                        ratios={RATIOS}
+                        selectedRatio={selectedRatio}
+                        onChange={handleRatioChange}
+                    />
+                    <IconButton onClick={handleRotate} text="Rotate">
+                        <RotateIcon />
+                    </IconButton>
+                </div>
+            </div>
         )}
 
         <main className="bg-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 transition-all duration-500 min-h-[400px] flex flex-col justify-center">
@@ -252,7 +314,7 @@ const App: React.FC = () => {
                             crop={crop}
                             onChange={(_, percentCrop) => setCrop(percentCrop)}
                             onComplete={(c) => setCompletedCrop(c)}
-                            aspect={selectedRatio.value}
+                            aspect={getAspectRatio()}
                             minWidth={50}
                             minHeight={50}
                             className="max-h-[60vh]"
@@ -268,9 +330,9 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <h3 className="text-lg text-center font-semibold text-slate-300 mb-3">
-                        {selectedRatio.label} Preview
+                        {selectedRatio.label} Preview ({rotation}&deg;)
                       </h3>
-                      <div className="w-full bg-slate-700/50 rounded-lg overflow-hidden shadow-md flex justify-center items-center p-2">
+                      <div className="w-full bg-slate-700/50 rounded-lg overflow-hidden shadow-md flex justify-center items-center p-2 aspect-auto">
                          <canvas
                             ref={previewCanvasRef}
                             style={{
@@ -283,13 +345,20 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                      <IconButton onClick={handleDownload} text="Download Cropped Image" disabled={!completedCrop || completedCrop.width === 0}>
-                          <DownloadIcon/>
-                      </IconButton>
-                       <IconButton onClick={handleReset} text="Start Over" variant="secondary" >
-                          <RefreshIcon />
-                      </IconButton>
+                  <div className="flex flex-col items-center justify-center gap-6">
+                      <DownloadOptions 
+                        onDownload={handleDownload} 
+                        onCopy={handleCopy}
+                        disabled={!completedCrop || completedCrop.width === 0}
+                      />
+                      <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                          <IconButton onClick={handleSmartCrop} text={isSmartCropping ? "Analyzing..." : "Smart Crop"} disabled={isSmartCropping}>
+                              <SparklesIcon />
+                          </IconButton>
+                           <IconButton onClick={handleReset} text="Start Over" variant="secondary" >
+                              <RefreshIcon />
+                          </IconButton>
+                      </div>
                   </div>
               </div>
             )}

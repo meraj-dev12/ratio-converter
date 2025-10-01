@@ -21,24 +21,19 @@ const RatioSelector: React.FC<RatioSelectorProps> = ({ ratios, selectedRatio, on
   };
 
   return (
-    <div className="flex flex-col items-center gap-2 mb-6">
-      <label htmlFor="ratio-select" className="text-slate-300 font-medium">
-        Select Aspect Ratio
-      </label>
-      <select
-        id="ratio-select"
-        value={selectedRatio.label}
-        onChange={handleChange}
-        disabled={disabled}
-        className="bg-slate-700 border border-slate-600 text-white text-lg rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full max-w-[200px] p-2.5 transition-colors"
-      >
-        {ratios.map(ratio => (
-          <option key={ratio.label} value={ratio.label}>
-            {ratio.label}
-          </option>
-        ))}
-      </select>
-    </div>
+    <select
+      id="ratio-select"
+      value={selectedRatio.label}
+      onChange={handleChange}
+      disabled={disabled}
+      className="bg-slate-700 border border-slate-600 text-white text-lg rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full max-w-[200px] p-2.5 transition-colors"
+    >
+      {ratios.map(ratio => (
+        <option key={ratio.label} value={ratio.label}>
+          {ratio.label}
+        </option>
+      ))}
+    </select>
   );
 };
 
