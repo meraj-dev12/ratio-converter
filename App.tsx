@@ -103,7 +103,7 @@ const App: React.FC = () => {
   function onImageLoad(e: React.SyntheticEvent<HTMLImageElement>) {
     imgRef.current = e.currentTarget;
     const { width, height } = e.currentTarget;
-    const newCrop = centerCrop(
+    const percentCrop = centerCrop(
         makeAspectCrop(
             {
                 unit: '%',
@@ -116,8 +116,17 @@ const App: React.FC = () => {
         width,
         height
     );
-    setCrop(newCrop);
-    setCompletedCrop(newCrop); // Set initial completed crop for preview
+    setCrop(percentCrop);
+    
+    // Convert to pixels and set completedCrop for initial preview
+    const pixelCrop: Crop = {
+        unit: 'px',
+        x: (percentCrop.x / 100) * width,
+        y: (percentCrop.y / 100) * height,
+        width: (percentCrop.width / 100) * width,
+        height: (percentCrop.height / 100) * height,
+    };
+    setCompletedCrop(pixelCrop);
   }
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,7 +174,7 @@ const App: React.FC = () => {
     setSelectedRatio(ratio);
     if (imgRef.current) {
       const { width, height } = imgRef.current;
-      const newCrop = centerCrop(
+      const percentCrop = centerCrop(
         makeAspectCrop(
           {
             unit: '%',
@@ -178,8 +187,16 @@ const App: React.FC = () => {
         width,
         height,
       );
-      setCrop(newCrop);
-      setCompletedCrop(newCrop);
+      setCrop(percentCrop);
+      
+      const pixelCrop: Crop = {
+        unit: 'px',
+        x: (percentCrop.x / 100) * width,
+        y: (percentCrop.y / 100) * height,
+        width: (percentCrop.width / 100) * width,
+        height: (percentCrop.height / 100) * height,
+    };
+    setCompletedCrop(pixelCrop);
     }
   };
 
@@ -279,7 +296,7 @@ const App: React.FC = () => {
         </main>
       </div>
       <footer className="text-center text-slate-500 mt-8">
-        <p>Built with React, TypeScript, and Tailwind CSS. All processing is done in your browser.</p>
+        <p>Made by <a href="https://www.instagram.com/meraj_the_developer/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:text-sky-500 transition-colors">Meraj the developer</a></p>
       </footer>
     </div>
   );
