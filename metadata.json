@@ -1,0 +1,5 @@
+{
+  "name": "Aspect Ratio Converter",
+  "description": "An intelligent web app to automatically convert any image to a variety of standard aspect ratios (e.g., 16:9, 4:3, 1:1). Users can upload images via selection or drag-and-drop, preview the original and converted versions side-by-side, and download the result. The entire process is handled client-side using the Canvas API for fast, private, and efficient image processing.",
+  "requestFramePermissions": []
+}
