@@ -58,6 +58,11 @@ const App: React.FC = () => {
     const cropWidth = completedCrop.width * scaleX;
     const cropHeight = completedCrop.height * scaleY;
     
+    // Prevent errors with zero dimensions
+    if (cropWidth <= 0 || cropHeight <= 0) {
+        return;
+    }
+
     const isRotated = rotation === 90 || rotation === 270;
     const canvasWidth = isRotated ? cropHeight : cropWidth;
     const canvasHeight = isRotated ? cropWidth : cropHeight;
@@ -225,23 +230,30 @@ const App: React.FC = () => {
   const handleSmartCrop = async () => {
     if (!imageFile) return;
     setIsSmartCropping(true);
+    setError(null);
     try {
       const smartCropData = await getSmartCrop(imageFile);
       if (smartCropData && imgRef.current) {
         const { width, height } = imgRef.current;
         const aspect = isRotated(rotation) ? 1/selectedRatio.value : selectedRatio.value;
 
-        const newCrop = makeAspectCrop(smartCropData, aspect, width, height);
-        const centeredCrop = centerCrop(newCrop, width, height);
+        // Create a crop from the smart data, maintaining the selected aspect ratio
+        // We use the smart crop center, but enforce the aspect ratio
+        const smartCrop = makeAspectCrop(smartCropData, aspect, width, height);
+        const centeredCrop = centerCrop(smartCrop, width, height);
 
         setCrop(centeredCrop);
         setCompletedCrop(pixelToPercent(centeredCrop, width, height));
       } else {
         setError("Could not determine a smart crop region.");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setError("AI Smart Crop failed. Please try again.");
+      if (e.message === "API_KEY_NOT_CONFIGURED") {
+        setError("AI Smart Crop is unavailable: API Key not configured.");
+      } else {
+        setError("AI Smart Crop failed. Please try again.");
+      }
     } finally {
       setIsSmartCropping(false);
     }
@@ -283,7 +295,7 @@ const App: React.FC = () => {
             </div>
         )}
 
-        <main className="bg-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 transition-all duration-500 min-h-[400px] flex flex-col justify-center">
+        <main className="bg-slate-800 rounded-2xl shadow-2xl p-6 md:p-8 transition-all duration-500 min-h-400 flex flex-col justify-center">
             {appState === 'idle' && (
                 <UploadArea onFileDrop={handleFileDrop} onFileChange={handleFileChange} fileInputRef={fileInputRef} />
             )}
@@ -317,7 +329,7 @@ const App: React.FC = () => {
                             aspect={getAspectRatio()}
                             minWidth={50}
                             minHeight={50}
-                            className="max-h-[60vh]"
+                            className="max-h-60vh"
                           >
                             <img
                                 alt="Crop me"

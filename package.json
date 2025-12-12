@@ -9,10 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react-dom": "^19.1.1",
-    "react": "^19.1.1",
+    "react": "^19.2.3",
     "react-image-crop": "11.0.5",
-    "@google/genai": "latest"
+    "@google/genai": "latest",
+    "react-dom": "^19.2.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
